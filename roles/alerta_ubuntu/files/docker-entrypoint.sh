@@ -8,9 +8,9 @@ ADMIN_PASSWORD=${ADMIN_PASSWORD:-alerta}
 MAXAGE=${ADMIN_KEY_MAXAGE:-315360000}  # default=10 years
 
 # Generate minimal server config, if not supplied
-if [ ! -f "${ALERTA_SVR_CONF_FILE}" ]; then
+if [ ! -f "/app/alertad.conf" ]; then
   echo "# Create server configuration file."
-  cat >"${ALERTA_SVR_CONF_FILE}" << EOF
+  cat >"/app/alertad.conf" << EOF
 SECRET_KEY = '$(< /dev/urandom tr -dc A-Za-z0-9_\!\@\#\$\%\^\&\*\(\)-+= | head -c 32)'
 EOF
 fi
@@ -30,9 +30,9 @@ if [ -n "${ADMIN_USERS}" ]; then
 fi
 
 # Generate minimal client config, if not supplied
-if [ ! -f "${ALERTA_CONF_FILE}" ]; then
+if [ ! -f "/app/alerta.conf" ]; then
   echo "# Create client configuration file."
-  cat >${ALERTA_CONF_FILE} << EOF
+  cat >/app/alerta.conf << EOF
 [DEFAULT]
 endpoint = http://localhost:8080/api
 EOF
@@ -47,7 +47,7 @@ EOF
     --scope "admin:management" \
     --duration "${MAXAGE}" \
     --text "Housekeeping")
-    cat >>${ALERTA_CONF_FILE} << EOF
+    cat >>/app/alerta.conf << EOF
 key = ${API_KEY}
 EOF
   fi
@@ -55,9 +55,9 @@ fi
 
 echo
 echo '# Checking versions.'
-echo Alerta Server ${SERVER_VERSION}
-echo Alerta Client ${CLIENT_VERSION}
-echo Alerta WebUI  ${WEBUI_VERSION}
+echo Alerta Server 7.5.0
+echo Alerta Client 7.5.0
+echo Alerta WebUI  7.5.0
 
 nginx -v
 echo uwsgi $(uwsgi --version)

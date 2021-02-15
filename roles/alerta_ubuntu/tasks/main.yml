@@ -1,11 +1,19 @@
 ---
 # tasks file for alerta_ubuntu
+
+- name: Update the repo
+  command: "apt-get update"
+  changed_when: false
+  become: true
+
+
 - name: Install Python3 and Other basic packages
   apt:
      name:
          - wget
          - curl
          - python3.7
+         - gcc
      state: present
   become: true
 
@@ -19,6 +27,11 @@
   copy:
      content: "deb https://repo.mongodb.org/apt/debian buster/mongodb-org/4.2 main"
      dest: /etc/apt/sources.list.d/mongodb-org-4.2.list
+  become: true
+
+- name: Update the repo
+  command: "apt-get update"
+  changed_when: false
   become: true
 
 - name: Install required packages for the application
@@ -40,12 +53,78 @@
      state: present
   become: true
 
-- name: Install python pip packages
+- name: Install pip latest & venv
   pip:
-     requirements: "requirements.txt"
+   name: "{{ item }}"
+   executable: pip
+   state: present
+  become: true
+  loop:
+      - pip 
+      - setuptools
+      - virtualenv
+
+- name: Creates a new venv
+  command: "python3 -m venv /venv"
+  changed_when: false
+  become: true
+
+- name: Creating alerta user
+  user:
+   name: "{{userId}}"
+   group: "root"
+   system: yes
+   # shell: "/sbin/nologin"
+   comment: "{{userId}} login User"
+   createhome: "no"
+   state: present
+  become: true
+
+- name: Create a workspace
+  file:
+      dest: "/{{ item }}"
+      state: directory
+      mode: 0755
+      owner: "{{ userId }}"
+      group: "root"
+  become: true
+  loop:
+      - app
+      - web
+
+- name: Copy the files
+  copy:
+      src: "{{ item }}"
+      dest: "/app/"
+      mode: 0755
+      owner: "{{ userId }}"
+      group: "root"
+  become: true
+  loop:
+      - install-plugins.sh
+      - nginx.conf
+      - plugins.txt
+      - requirements.txt
+      - supervisord.conf
+      - uwsgi.ini
+      - wsgi.py
+      - docker-entrypoint.sh
+
+- name: Install the Setuptools in the virtual env
+  pip:
+     name: "setuptools"
+     state: present
+     virtualenv: "/venv"
+     virtualenv_python: "3.0"
+  become: true
+
+- name: Install python pip packages from requirement.txt
+  pip:
+     requirements: "/app/requirements.txt"
      virtualenv: "/venv"
      virtualenv_python: "3.0"
      state: present
+  become: true
 
 - name: Install the alerta softwares
   pip:
@@ -53,11 +132,61 @@
          - "alerta=={{ CLIENT_VERSION }}"
          - "alerta-server=={{ SERVER_VERSION }}"
      state: present
+     virtualenv: "/venv"
+     virtualenv_python: "3.0"
   become: true
 
-- name: Copy the file
+
+# - name: Executing the script to install plugins for alerta files
+#   shell: "/app/install-plugins.sh"
+#   become: true
+#   changed_when: false
+#   async: 200
+#   poll: 50
+
+- name: Downloading the Alerta Web Content
+  unarchive:
+      src: "https://github.com/alerta/alerta-webui/releases/download/v{{ WEBUI_VERSION }}/alerta-webui.tar.gz"
+      dest: /tmp
+      remote_src: yes
+  become: true
+
+- name: Copy the contect into different location
+  shell: "cp -r /tmp/dist/* /web/"
+  become: true
+  changed_when: false
+
+- name: Copy the config file
   copy:
-      src: install-plugins.sh
-      dest: "/app/install-plugins.sh"
+      src: "config.json"
+      dest: "/web/config.json"
       mode: 0755
-      owner: alerta
+      owner: "{{ userId }}"
+      group: "root"
+  become: true
+
+- name: Install MongoDB
+  apt:
+      name: 
+         - mongodb-org
+      state: present
+  become: true
+
+- name: Start and Enable the mongodb service
+  service:
+      name: "mongod"
+      state: started
+      enabled: true
+  become: true
+
+- name: Execute Shell entrypoint
+  shell: "sudo su -c '/app/docker-entrypoint.sh' - {{ userId }}"
+  become: false
+  changed_when: false
+
+- name: Execute Shell entrypoint
+  shell: "sudo su -c 'supervisord -c /app/supervisord.conf &' - {{ userId }}"
+  become: false
+ 
+
+

@@ -6,11 +6,17 @@ export WEBUI_VERSION=7.5.0
 export ALERTA_SVR_CONF_FILE=/app/alertad.conf
 export ALERTA_CONF_FILE=/app/alerta.conf
 export PATH=$PATH:/venv/bin
+export HK_EXPIRED_DELETE_HRS=2
+export HK_INFO_DELETE_HRS=12
+export HEARTBEAT_SEVERITY=major
+export DATABASE_URL=mongodb://localhost:27017/monitoring
+
 curl -fsSL https://www.mongodb.org/static/pgp/server-4.2.asc | apt-key add -
 echo "deb https://repo.mongodb.org/apt/debian buster/mongodb-org/4.2 main" | tee /etc/apt/sources.list.d/mongodb-org-4.2.list
 apt-get update &&     apt-get install -y --no-install-recommends     gettext-base     libffi-dev     libldap2-dev     libpq-dev     libsasl2-dev     nginx-light     postgresql-client     python3-dev     supervisor     wget     mongodb-org-shell
 apt install python-pip
 apt-get install python3-venv
+
 cat requirements.txt <
 bcrypt==3.2.0
 blinker==1.4
@@ -167,7 +173,6 @@ ln -sf /dev/stdout /var/log/nginx/access.log     && ln -sf /dev/stderr /var/log/
 
 chgrp -R 0 /app /venv /web &&     chmod -R g=u /app /venv /web &&     useradd -u 1001 -g 0 alerta
 
-export HEARTBEAT_SEVERITY=major
 
 cat docker-entrypoint.sh
 #!/bin/bash
@@ -271,13 +276,11 @@ autostart=true
 autorestart=true
 redirect_stderr=true
 
-export HK_EXPIRED_DELETE_HRS=2
-export HK_INFO_DELETE_HRS=12
 
 apt-get install -y mongodb-org
 systemctl start mongod
 systemctl enable mongod
-export DATABASE_URL=mongodb://localhost:27017/monitoring
+
 
 chmod +x wsgi.py docker-entrypoint.sh install-plugins.sh
 
