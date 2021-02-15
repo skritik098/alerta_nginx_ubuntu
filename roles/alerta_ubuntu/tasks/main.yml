@@ -1,0 +1,63 @@
+---
+# tasks file for alerta_ubuntu
+- name: Install Python3 and Other basic packages
+  apt:
+     name:
+         - wget
+         - curl
+         - python3.7
+     state: present
+  become: true
+
+- name: Add the apt key for mongoDB
+  apt_key:
+     url: https://www.mongodb.org/static/pgp/server-4.2.asc
+     state: present
+  become: true
+
+- name: Adding repo content
+  copy:
+     content: "deb https://repo.mongodb.org/apt/debian buster/mongodb-org/4.2 main"
+     dest: /etc/apt/sources.list.d/mongodb-org-4.2.list
+  become: true
+
+- name: Install required packages for the application
+  apt:
+     name:
+        - gettext-base
+        - libffi-dev
+        - libldap2-dev
+        - libpq-dev
+        - libsasl2-dev
+        - nginx-light
+        - postgresql-client
+        - python3-dev
+        - supervisor
+        - mongodb-org-shell
+        - python-pip
+        - python3-venv
+     install_recommends: false
+     state: present
+  become: true
+
+- name: Install python pip packages
+  pip:
+     requirements: "requirements.txt"
+     virtualenv: "/venv"
+     virtualenv_python: "3.0"
+     state: present
+
+- name: Install the alerta softwares
+  pip:
+     name:
+         - "alerta=={{ CLIENT_VERSION }}"
+         - "alerta-server=={{ SERVER_VERSION }}"
+     state: present
+  become: true
+
+- name: Copy the file
+  copy:
+      src: install-plugins.sh
+      dest: "/app/install-plugins.sh"
+      mode: 0755
+      owner: alerta

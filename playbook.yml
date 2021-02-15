@@ -1,0 +1,12 @@
+- hosts: alerta
+  become: false
+  environment:
+     CLIENT_VERSION: "7.5.0"
+     SERVER_VERSION: "7.5.0"
+     WEBUI_VERSION: "7.5.0"
+     ALERTA_SVR_CONF_FILE: "/app/alertad.conf"
+     ALERTA_CONF_FILE: "/app/alerta.conf"
+     HK_EXPIRED_DELETE_HRS: "2"
+     HK_INFO_DELETE_HRS: "12"
+     DATABASE_URL: "mongodb://localhost:27017/monitoring"
+     PATH: /venv/bin:{{ ansible_env.PATH }}

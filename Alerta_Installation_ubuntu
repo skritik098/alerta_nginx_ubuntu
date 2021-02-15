@@ -1,0 +1,301 @@
+apt-get update
+apt-get install -y vim wget curl python3.7
+export CLIENT_VERSION=7.5.0
+export SERVER_VERSION=7.5.0
+export WEBUI_VERSION=7.5.0
+export ALERTA_SVR_CONF_FILE=/app/alertad.conf
+export ALERTA_CONF_FILE=/app/alerta.conf
+export PATH=$PATH:/venv/bin
+curl -fsSL https://www.mongodb.org/static/pgp/server-4.2.asc | apt-key add -
+echo "deb https://repo.mongodb.org/apt/debian buster/mongodb-org/4.2 main" | tee /etc/apt/sources.list.d/mongodb-org-4.2.list
+apt-get update &&     apt-get install -y --no-install-recommends     gettext-base     libffi-dev     libldap2-dev     libpq-dev     libsasl2-dev     nginx-light     postgresql-client     python3-dev     supervisor     wget     mongodb-org-shell
+apt install python-pip
+apt-get install python3-venv
+cat requirements.txt <
+bcrypt==3.2.0
+blinker==1.4
+cryptography==3.2.1
+Flask==1.1.2
+Flask-Compress==1.8.0
+Flask-Cors==3.0.9
+mohawk==1.1.0
+psycopg2==2.8.6
+PyJWT==1.7.1
+pymongo==3.11.2
+pyparsing==2.4.7
+python-dateutil==2.8.1
+pytz==2020.4
+PyYAML==5.3.1
+requests==2.25.0
+requests_hawk==1.0.1
+sentry-sdk[flask]===0.19.4
+
+lxml==4.6.2
+pysaml2==6.3.1
+python-ldap==3.3.1
+uWSGI==2.0.19.1
+
+pip install pip virtualenv
+python3 -m venv /venv
+/venv/bin/pip install --upgrade setuptools
+/venv/bin/pip install -r  requirements.txt 
+
+/venv/bin/pip install alerta==${CLIENT_VERSION} alerta-server==${SERVER_VERSION}
+cat install-plugins.sh
+#!/bin/bash
+
+while read plugin version; do
+  echo "Installing '${plugin}' (${version})"
+  /venv/bin/pip install git+https://github.com/alerta/alerta-contrib.git@${version}#subdirectory=${plugin}
+done </app/plugins.txt
+
+cat /app/plugins.txt
+plugins/alertops master
+plugins/amqp master
+plugins/cachet master
+plugins/dingtalk master
+plugins/enhance master
+plugins/geoip master
+plugins/influxdb master
+plugins/logstash master
+plugins/mattermost master
+plugins/msteams master
+plugins/normalise master
+plugins/op5 master
+plugins/opsgenie master
+plugins/pagerduty master
+plugins/prometheus master
+plugins/pubsub master
+plugins/pushover master
+plugins/rocketchat master
+plugins/slack master
+plugins/sns master
+plugins/syslog master
+plugins/telegram master
+plugins/twilio master
+plugins/zabbix master
+
+chmod +x install-plugins.sh
+./install-plugins.sh 
+wget https://github.com/alerta/alerta-webui/releases/download/v${WEBUI_VERSION}/alerta-webui.tar.gz /tmp/webui.tar.gz
+tar zxvf /tmp/webui.tar.gz -C /tmp &&     mv /tmp/dist /web
+
+cat /web/config.json
+{"endpoint": "/api"}
+
+cat /app/wsgi.py
+from alerta import create_app
+app = create_app()
+
+
+cat /app/uwsgi.ini
+[uwsgi]
+chdir = /app
+module = wsgi
+manage-script-name = true
+mount = /api=wsgi:app
+master = true
+processes = 5
+
+socket = /tmp/uwsgi.sock
+buffer-size = 8192
+chmod-socket = 664
+uid = alerta
+gid = root
+vacuum = true
+
+die-on-term = true
+
+cat /app/nginx.conf
+worker_processes 4;
+pid /tmp/nginx.pid;
+
+daemon off;
+error_log /dev/stderr warn;
+
+events {
+        worker_connections 1024;
+}
+
+http {
+        client_body_temp_path /tmp/client_body;
+        fastcgi_temp_path /tmp/fastcgi_temp;
+        proxy_temp_path /tmp/proxy_temp;
+        scgi_temp_path /tmp/scgi_temp;
+        uwsgi_temp_path /tmp/uwsgi_temp;
+
+        include /etc/nginx/mime.types;
+
+        gzip on;
+        gzip_disable "msie6";
+
+        log_format main 'ip=\$http_x_real_ip [\$time_local] '
+        '"\$request" \$status \$body_bytes_sent "\$http_referer" '
+        '"\$http_user_agent"' ;
+
+        log_format scripts '$document_root | $uri | > $request';
+
+        default_type application/octet-stream;
+
+        server {
+                listen 8080 default_server;
+
+
+                access_log /dev/stdout main;
+                access_log /dev/stdout scripts;
+
+                location ~ /api {
+                        include /etc/nginx/uwsgi_params;
+                        uwsgi_pass unix:/tmp/uwsgi.sock;
+
+                        proxy_set_header Host $host:$server_port;
+                        proxy_set_header X-Real-IP $remote_addr;
+                        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                }
+
+                root /web;
+                index index.html;
+                location / {
+                        try_files $uri $uri/ /index.html;
+                }
+        }
+}
+
+
+ln -sf /dev/stdout /var/log/nginx/access.log     && ln -sf /dev/stderr /var/log/nginx/error.log
+
+
+chgrp -R 0 /app /venv /web &&     chmod -R g=u /app /venv /web &&     useradd -u 1001 -g 0 alerta
+
+export HEARTBEAT_SEVERITY=major
+
+cat docker-entrypoint.sh
+#!/bin/bash
+set -ex
+
+env | sort
+
+ADMIN_USER=${ADMIN_USERS%%,*}
+ADMIN_PASSWORD=${ADMIN_PASSWORD:-alerta}
+MAXAGE=${ADMIN_KEY_MAXAGE:-315360000}  # default=10 years
+
+# Generate minimal server config, if not supplied
+if [ ! -f "${ALERTA_SVR_CONF_FILE}" ]; then
+  echo "# Create server configuration file."
+  cat >"${ALERTA_SVR_CONF_FILE}" << EOF
+SECRET_KEY = '$(< /dev/urandom tr -dc A-Za-z0-9_\!\@\#\$\%\^\&\*\(\)-+= | head -c 32)'
+EOF
+fi
+
+# Init admin users and API keys
+if [ -n "${ADMIN_USERS}" ]; then
+  echo "# Create admin users."
+  alertad user --all --password "${ADMIN_PASSWORD}" || true
+  echo "# Create admin API keys."
+  alertad key --all
+
+  # Create user-defined API key, if required
+  if [ -n "${ADMIN_KEY}" ]; then
+    echo "# Create user-defined admin API key."
+    alertad key --username "${ADMIN_USER}" --key "${ADMIN_KEY}" --duration "${MAXAGE}"
+  fi
+fi
+
+# Generate minimal client config, if not supplied
+if [ ! -f "${ALERTA_CONF_FILE}" ]; then
+  echo "# Create client configuration file."
+  cat >${ALERTA_CONF_FILE} << EOF
+[DEFAULT]
+endpoint = http://localhost:8080/api
+EOF
+
+  # Add API key to client config, if required
+  if [ "${AUTH_REQUIRED,,}" == "true" ]; then
+    echo "# Auth enabled; add admin API key to client configuration."
+    API_KEY=$(alertad key \
+    --username "${ADMIN_USER}" \
+    --scope "read" \
+    --scope "write:alerts" \
+    --scope "admin:management" \
+    --duration "${MAXAGE}" \
+    --text "Housekeeping")
+    cat >>${ALERTA_CONF_FILE} << EOF
+key = ${API_KEY}
+EOF
+  fi
+fi
+
+echo
+echo '# Checking versions.'
+echo Alerta Server ${SERVER_VERSION}
+echo Alerta Client ${CLIENT_VERSION}
+echo Alerta WebUI  ${WEBUI_VERSION}
+
+nginx -v
+echo uwsgi $(uwsgi --version)
+mongo --version | grep MongoDB
+psql --version
+python3 --version
+/venv/bin/pip list
+
+echo
+echo 'Alerta init process complete; ready for start up.'
+echo
+
+exec "$@"
+
+cat /app/supervisord.conf
+[supervisord]
+nodaemon=true
+logfile=/tmp/supervisord.log
+loglevel=debug
+pidfile=/tmp/supervisord.pid
+
+[program:uwsgi]
+command=/venv/bin/uwsgi --ini /app/uwsgi.ini
+redirect_stderr=true
+
+[program:nginx]
+command=nginx -c /app/nginx.conf
+redirect_stderr=true
+
+[program:housekeeping]
+command=bash -c "sleep 60 && alerta housekeeping --expired %(ENV_HK_EXPIRED_DELETE_HRS)s --info %(ENV_HK_INFO_DELETE_HRS)s"
+autostart=true
+autorestart=true
+redirect_stderr=true
+
+[program:heartbeats]
+command=sh -c "sleep 60 && alerta heartbeats --alert --severity %(ENV_HEARTBEAT_SEVERITY)s"
+autostart=true
+autorestart=true
+redirect_stderr=true
+
+export HK_EXPIRED_DELETE_HRS=2
+export HK_INFO_DELETE_HRS=12
+
+apt-get install -y mongodb-org
+systemctl start mongod
+systemctl enable mongod
+export DATABASE_URL=mongodb://localhost:27017/monitoring
+
+chmod +x wsgi.py docker-entrypoint.sh install-plugins.sh
+
+##Login with the general user not the root user##
+
+/app/docker-entrypoint.sh
+
+supervisord -c /app/supervisord.conf 
+
+
+
+
+
+
+
+
+
+
+
+
+
