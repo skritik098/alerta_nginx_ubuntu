@@ -3,5 +3,28 @@
   environment:
      DATABASE_URL: "mongodb://localhost:27017/monitoring"
      PATH: /venv/bin:{{ ansible_env.PATH }}
+     AUTH_REQUIRED: True
+     ADMIN_USERS: admin@alerta.io,devops@alerta.io
+     ADMIN_KEY: demo-key
+     DEBUG: 1
+  tags:
+    - install
+    - alerta
   roles:
     - alerta_ubuntu
+
+- hosts: alerta
+  become: false
+  environment:
+     DATABASE_URL: "mongodb://localhost:27017/monitoring"
+     PATH: /venv/bin:{{ ansible_env.PATH }}
+     AUTH_REQUIRED: True
+     ADMIN_USERS: admin@alerta.io,devops@alerta.io
+     ADMIN_KEY: demo-key
+     DEBUG: 1
+  tags:
+    - configure
+    - alerta
+  roles:
+    - prometheus_configure_alerta
+    

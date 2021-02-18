@@ -11,5 +11,7 @@ HEARTBEAT_SEVERITY: "major"
 DATABASE_URL: "mongodb://localhost:27017/monitoring"
 userId: "alerta"
 groupId: "alerta"
+serviceName: "alerta"
+exec_command: "/usr/bin/supervisord -c /app/supervisord.conf"
 
 

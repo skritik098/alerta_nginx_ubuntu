@@ -108,7 +108,15 @@
       - supervisord.conf
       - uwsgi.ini
       - wsgi.py
-      - docker-entrypoint.sh
+
+- name: Copy the entrypoint.sh file
+  template:
+      src: "{{ role_path }}/templates/docker-entrypoint.sh.j2"
+      dest: "/app/docker-entrypoint.sh"
+      mode: 0755
+      owner: "{{ userId }}"
+      group: "root"
+  become: true
 
 - name: Install the Setuptools in the virtual env
   pip:
@@ -180,13 +188,40 @@
   become: true
 
 - name: Execute Shell entrypoint
-  shell: "sudo su -c '/app/docker-entrypoint.sh' - {{ userId }}"
+  shell: "export DATABASE_URL=mongodb://localhost:27017/monitoring AUTH_REQUIRED=true ADMIN_USERS=admin@alerta.io ADMIN_KEY=demo-key DEBUG=1 &&  /app/docker-entrypoint.sh"
   become: false
+  register: output
   changed_when: false
+  environment:
+    DATABASE_URL: "mongodb://localhost:27017/monitoring"
+    PATH: /venv/bin:{{ ansible_env.PATH }}
+    AUTH_REQUIRED: "true"
+    ADMIN_USERS: "admin@alerta.io"
+    ADMIN_KEY: "demo-key"
+    DEBUG: "1"
 
-- name: Execute Shell entrypoint
-  shell: "sudo su -c 'supervisord -c /app/supervisord.conf &' - {{ userId }}"
-  become: false
+- name: Print the output
+  debug:
+    msg: "{{ output }}"
+# - name: Execute Shell entrypoint
+#   shell: "sudo su -c 'supervisord -c /app/supervisord.conf &' - {{ userId }}"
+#   become: false
+
+- name: Copy the systemd unit file alerta
+  template:
+    src: "{{ role_path }}/templates/init.service.j2"
+    dest: /etc/systemd/system/alerta.service
+  notify: systemd_reload
+  become: true
  
+- name: Flush the handlers
+  meta: flush_handlers
+
+- name: Start the service
+  service:
+    name: alerta
+    state: started
+    enabled: yes
+  become: true
 
 
